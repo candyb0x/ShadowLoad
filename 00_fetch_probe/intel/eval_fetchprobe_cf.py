@@ -2,9 +2,9 @@ import os
 import subprocess
 import statistics
 
-os.system("mkdir out")
-os.system("make")
-os.system("cd kernel_module; make; insmod fetchprobe_module.ko")
+os.system("mkdir out")  # 创建输出目录
+os.system("make")   # 编译代码
+os.system("cd kernel_module; make; insmod fetchprobe_module.ko")    # 加载模块
 
 def run():
     res = subprocess.check_output(["taskset", "-c", "1", "./fetchprobe_cf"]).decode()

