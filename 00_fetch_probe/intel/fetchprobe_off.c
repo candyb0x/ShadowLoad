@@ -18,7 +18,7 @@ static uint8_t* colliding_buffer;
 // 用于区分缓存命中和缓存未命中的时间阈值
 static uint64_t threshold;
 
-// 尝试“猜测”一个字节（或更确切地说，一个比特）的函数
+// 尝试“猜测”一个比特的函数
 uint64_t guess_byte(size_t stride, size_t offset, size_t guess_offset) {
     // 刷新上次访问的缓冲区位置和探测位置，确保它们不在缓存中。
     // 这里引入了 guess_offset，表示在探测时，colliding_buffer会偏移一个额外的量。
